@@ -25,11 +25,17 @@
 > # 브라우저에서 http://localhost:8000 접속
 > ```
 
-### 2) GitHub Pages로 실행
-1. 이 저장소를 GitHub에 푸시합니다(이미 되어 있다면 생략).
-2. 저장소 → **Settings → Pages** 이동
-3. **Source**를 `Deploy from a branch`로 두고, 브랜치(예: `main`)와 폴더 `/(root)` 선택 후 저장
-4. 잠시 뒤 `https://<사용자명>.github.io/webpagemon/` 주소에서 접속
+### 2) GitHub Pages로 실행 (자동 배포)
+이 저장소에는 `.github/workflows/deploy.yml` 워크플로가 포함되어 있어,
+작업 브랜치에 **푸시될 때마다 자동으로 GitHub Pages에 배포**됩니다.
+(워크플로가 Pages를 자동 활성화하므로 별도 설정 클릭이 필요 없습니다.)
+
+- 배포 주소: **https://noainred.github.io/webpagemon/**
+- 진행 상황: 저장소 → **Actions** 탭의 "Deploy to GitHub Pages" 실행 로그
+- 수동 재배포: **Actions → Deploy to GitHub Pages → Run workflow**
+
+> 참고: 조직 정책 등으로 Pages 자동 활성화가 막혀 있다면,
+> **Settings → Pages → Source = GitHub Actions** 로 한 번만 지정하면 됩니다.
 
 ### 3) 감시 추가
 1. **감시할 페이지 URL** 입력
