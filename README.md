@@ -72,6 +72,24 @@
 4. 대상 사이트가 봇/프록시 IP를 차단하거나 로그인이 필요한 경우, 공개 프록시로는 가져올 수 없습니다.
 5. 너무 짧은 주기(예: 5초)는 프록시 사용량 제한에 걸릴 수 있으니 30~60초 이상을 권장합니다.
 
+## 차단된 사이트 감시 — 자체 프록시 (Cloudflare Worker)
+
+일부 사이트는 공개 프록시(데이터센터 IP)를 막아 어떤 프록시로도 `오류 / 가져오기 실패`가 납니다.
+이때는 **본인 소유의 프록시**를 무료로 하나 두면 됩니다. 저장소의 [`cloudflare-worker.js`](cloudflare-worker.js)를 쓰세요.
+
+1. https://dash.cloudflare.com → **Workers & Pages** → **Create application** → **Create Worker**
+   → 이름 입력(예: `webpagemon-proxy`) → **Deploy**
+2. **Edit code** → `cloudflare-worker.js` 내용을 전부 붙여넣기 → **Deploy**
+3. 배포 주소 확인: `https://webpagemon-proxy.<내subdomain>.workers.dev`
+4. WebPageMon 앱에서:
+   - **비교 프록시** → `직접 입력…`
+   - **사용자 프록시 URL** → `https://webpagemon-proxy.<내subdomain>.workers.dev/?url={url}`
+     (`{url}` 자리표시자는 그대로 두세요 — 앱이 감시 대상 주소로 치환합니다.)
+
+이 Worker는 실제 **브라우저 User-Agent**를 붙여 요청하므로 UA 기반 차단을 우회하며, CORS를 허용해
+브라우저가 응답을 읽을 수 있게 합니다. 다만 대상이 **자바스크립트 챌린지**(사람 확인)까지 거는 경우엔
+단순 프록시로는 통과하지 못할 수 있습니다(헤드리스 브라우저 방식 필요).
+
 ## 제한 사항
 
 - 감시는 **이 탭이 열려 있는 동안에만** 동작합니다. (브라우저가 닫히면 멈춤)
