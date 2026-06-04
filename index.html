@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>WebPageMon · 웹페이지 변경 감시</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔔</text></svg>" />
+<style>
+  :root{
+    --bg:#0f1420; --panel:#171e2e; --panel2:#1e273b; --border:#2a3650;
+    --text:#e6ebf5; --muted:#8c98b3; --accent:#5b8cff; --accent2:#3a6bff;
+    --ok:#27c08a; --warn:#f5a524; --err:#f04f5a; --info:#4aa8ff;
+    --radius:12px;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:linear-gradient(180deg,#0d1320,#0f1420 320px);
+    color:var(--text); font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans KR",sans-serif;
+    line-height:1.5; padding:24px 16px 60px;
+  }
+  .wrap{max-width:980px; margin:0 auto}
+  header{display:flex; align-items:center; gap:12px; margin-bottom:6px}
+  header h1{font-size:22px; margin:0; letter-spacing:-.3px}
+  header .logo{font-size:30px}
+  .sub{color:var(--muted); font-size:13px; margin:0 0 20px}
+  .card{background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); padding:18px; margin-bottom:18px}
+  .card h2{font-size:14px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin:0 0 14px}
+  label{display:block; font-size:12px; color:var(--muted); margin:0 0 5px}
+  input[type=text],input[type=url],input[type=number],select{
+    width:100%; background:var(--panel2); border:1px solid var(--border); color:var(--text);
+    border-radius:8px; padding:9px 11px; font-size:14px; outline:none;
+  }
+  input:focus,select:focus{border-color:var(--accent)}
+  .grid{display:grid; gap:12px}
+  .grid.cols{grid-template-columns:1fr 160px 150px}
+  .grid.cols2{grid-template-columns:1fr 1fr}
+  .row{display:flex; gap:10px; flex-wrap:wrap; align-items:center}
+  button{
+    background:var(--accent2); color:#fff; border:none; border-radius:8px;
+    padding:9px 16px; font-size:14px; font-weight:600; cursor:pointer; transition:.15s;
+  }
+  button:hover{filter:brightness(1.1)}
+  button.ghost{background:transparent; border:1px solid var(--border); color:var(--text); font-weight:500}
+  button.ghost:hover{border-color:var(--accent); background:var(--panel2)}
+  button.danger{background:transparent; border:1px solid var(--err); color:var(--err); font-weight:500}
+  button.sm{padding:5px 10px; font-size:12px}
+  .hint{font-size:12px; color:var(--muted); margin-top:6px}
+  .toggles{display:flex; gap:18px; flex-wrap:wrap}
+  .toggle{display:flex; align-items:center; gap:7px; font-size:13px; color:var(--text); cursor:pointer}
+  .toggle input{width:16px; height:16px; accent-color:var(--accent)}
+
+  /* monitor list */
+  #list{display:flex; flex-direction:column; gap:12px}
+  .empty{color:var(--muted); text-align:center; padding:30px; font-size:14px}
+  .mon{background:var(--panel2); border:1px solid var(--border); border-radius:10px; padding:14px 16px}
+  .mon .top{display:flex; align-items:flex-start; gap:12px; justify-content:space-between}
+  .mon .name{font-weight:600; font-size:15px; word-break:break-all}
+  .mon .url{font-size:12px; color:var(--muted); word-break:break-all; margin-top:2px}
+  .mon .url a{color:var(--info); text-decoration:none}
+  .mon .url a:hover{text-decoration:underline}
+  .mon .meta{display:flex; gap:16px; flex-wrap:wrap; font-size:12px; color:var(--muted); margin-top:10px}
+  .mon .meta b{color:var(--text); font-weight:600}
+  .mon .actions{display:flex; gap:6px; flex-wrap:wrap; margin-top:12px}
+  .badge{display:inline-block; padding:3px 9px; border-radius:999px; font-size:11px; font-weight:700; white-space:nowrap}
+  .b-baseline{background:#33405e; color:#c7d2ec}
+  .b-unchanged{background:rgba(39,192,138,.15); color:var(--ok)}
+  .b-changed{background:rgba(245,165,36,.18); color:var(--warn)}
+  .b-error{background:rgba(240,79,90,.16); color:var(--err)}
+  .b-checking{background:rgba(74,168,255,.16); color:var(--info)}
+  .b-paused{background:#2c3650; color:var(--muted)}
+
+  /* log */
+  #log{font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; max-height:220px; overflow:auto;
+       background:#0c111c; border:1px solid var(--border); border-radius:8px; padding:10px}
+  #log div{padding:2px 0; border-bottom:1px solid #141c2b; white-space:pre-wrap; word-break:break-all}
+  #log .t{color:var(--muted)}
+  #log .c-ok{color:var(--ok)} #log .c-warn{color:var(--warn)} #log .c-err{color:var(--err)} #log .c-info{color:var(--info)}
+
+  /* modal */
+  .overlay{position:fixed; inset:0; background:rgba(6,9,16,.7); backdrop-filter:blur(3px);
+           display:none; align-items:center; justify-content:center; padding:20px; z-index:50}
+  .overlay.show{display:flex}
+  .modal{background:var(--panel); border:1px solid var(--border); border-radius:14px; max-width:760px; width:100%;
+         max-height:85vh; display:flex; flex-direction:column; box-shadow:0 24px 80px rgba(0,0,0,.5)}
+  .modal .mhead{padding:16px 20px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center}
+  .modal .mhead h3{margin:0; font-size:17px}
+  .modal .mbody{padding:16px 20px; overflow:auto}
+  .modal .mfoot{padding:14px 20px; border-top:1px solid var(--border); display:flex; gap:10px; justify-content:flex-end; flex-wrap:wrap}
+  .close-x{background:none; border:none; color:var(--muted); font-size:22px; cursor:pointer; padding:0; line-height:1}
+  .diff{font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12.5px; background:#0c111c;
+        border:1px solid var(--border); border-radius:8px; padding:10px; overflow:auto; max-height:50vh}
+  .diff div{padding:1px 6px; white-space:pre-wrap; word-break:break-all; border-radius:3px}
+  .diff .add{background:rgba(39,192,138,.13); color:#7ef0c0}
+  .diff .del{background:rgba(240,79,90,.13); color:#ff9aa2}
+  .diff .eq{color:var(--muted)}
+  .pill{font-size:12px; color:var(--muted)}
+  footer{color:var(--muted); font-size:12px; text-align:center; margin-top:8px}
+  footer code{background:var(--panel2); padding:1px 6px; border-radius:5px}
+  a.link{color:var(--info)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <span class="logo">🔔</span>
+    <h1>WebPageMon</h1>
+  </header>
+  <p class="sub">지정한 웹페이지를 주기적으로 확인하고, <b>변경이 감지되면 팝업</b>으로 알려줍니다. 서버 없이 브라우저에서 동작합니다.</p>
+
+  <!-- 감시 대상 추가 -->
+  <div class="card">
+    <h2>감시 대상 추가</h2>
+    <div class="grid cols">
+      <div>
+        <label for="url">감시할 페이지 URL</label>
+        <input type="url" id="url" placeholder="https://example.com/page" />
+      </div>
+      <div>
+        <label for="interval">확인 주기(초)</label>
+        <input type="number" id="interval" value="60" min="5" />
+      </div>
+      <div>
+        <label for="mode">비교 방식</label>
+        <select id="mode">
+          <option value="text">텍스트(권장)</option>
+          <option value="raw">원본 HTML</option>
+        </select>
+      </div>
+    </div>
+    <div class="grid cols2" style="margin-top:12px">
+      <div>
+        <label for="label">이름(선택)</label>
+        <input type="text" id="label" placeholder="예: 공지사항 페이지" />
+      </div>
+      <div>
+        <label for="selector">CSS 선택자(선택) — 특정 영역만 감시</label>
+        <input type="text" id="selector" placeholder="예: #notice, .board-list, main" />
+      </div>
+    </div>
+    <div class="grid cols2" style="margin-top:12px">
+      <div>
+        <label for="proxy">CORS 프록시 (다른 사이트 접근용)</label>
+        <select id="proxy">
+          <option value="allorigins">AllOrigins (기본)</option>
+          <option value="corsproxy">corsproxy.io</option>
+          <option value="codetabs">codetabs.com</option>
+          <option value="direct">프록시 없음 (CORS 허용 사이트/동일 출처)</option>
+          <option value="custom">직접 입력…</option>
+        </select>
+      </div>
+      <div>
+        <label for="customProxy">사용자 프록시 URL (<code>{url}</code> 자리표시자)</label>
+        <input type="text" id="customProxy" placeholder="https://my-proxy/?target={url}" disabled />
+      </div>
+    </div>
+    <div class="row" style="margin-top:14px">
+      <button id="addBtn">+ 감시 시작</button>
+      <span class="hint">대상 사이트가 자주 바뀌면 <b>CSS 선택자</b>로 영역을 좁히면 오탐이 줄어듭니다.</span>
+    </div>
+  </div>
+
+  <!-- 알림 설정 -->
+  <div class="card">
+    <h2>알림 방식</h2>
+    <div class="toggles">
+      <label class="toggle"><input type="checkbox" id="optPopup" checked /> 화면 팝업</label>
+      <label class="toggle"><input type="checkbox" id="optNotify" /> 브라우저 알림</label>
+      <label class="toggle"><input type="checkbox" id="optSound" checked /> 소리</label>
+      <label class="toggle"><input type="checkbox" id="optTitle" checked /> 탭 제목 깜빡임</label>
+    </div>
+    <p class="hint" id="notifyHint"></p>
+  </div>
+
+  <!-- 감시 목록 -->
+  <div class="card">
+    <div class="row" style="justify-content:space-between; margin-bottom:14px">
+      <h2 style="margin:0">감시 목록 <span id="count" class="pill"></span></h2>
+      <div class="row">
+        <button class="ghost sm" id="checkAll">전체 즉시 확인</button>
+        <button class="ghost sm" id="pauseAll">전체 일시정지</button>
+      </div>
+    </div>
+    <div id="list"><div class="empty">아직 감시 중인 페이지가 없습니다. 위에서 URL을 추가하세요.</div></div>
+  </div>
+
+  <!-- 로그 -->
+  <div class="card">
+    <div class="row" style="justify-content:space-between; margin-bottom:10px">
+      <h2 style="margin:0">활동 로그</h2>
+      <button class="ghost sm" id="clearLog">지우기</button>
+    </div>
+    <div id="log"></div>
+  </div>
+
+  <footer>
+    데이터는 브라우저 <code>localStorage</code>에만 저장됩니다 · 감시는 이 탭이 열려 있는 동안만 동작합니다 ·
+    <a class="link" href="https://github.com/noainred/webpagemon" target="_blank" rel="noopener">GitHub</a>
+  </footer>
+</div>
+
+<!-- 변경 알림 팝업 -->
+<div class="overlay" id="overlay">
+  <div class="modal">
+    <div class="mhead">
+      <h3>🔔 변경 감지!</h3>
+      <button class="close-x" id="modalClose">×</button>
+    </div>
+    <div class="mbody" id="modalBody"></div>
+    <div class="mfoot">
+      <button class="ghost" id="openPage">페이지 열기</button>
+      <button id="modalOk">확인</button>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+(function(){
+  /* ----------------------- 저장소 ----------------------- */
+  const LS_MON = 'webpagemon.monitors.v1';
+  const LS_SET = 'webpagemon.settings.v1';
+  const MAX_TEXT = 300_000; // 비교/diff용 저장 텍스트 상한(localStorage 보호)
+
+  let monitors = load(LS_MON, []);
+  let settings = Object.assign({popup:true, notify:false, sound:true, title:true}, load(LS_SET, {}));
+  const timers = {};        // id -> intervalId (런타임 전용, 저장 안 함)
+  let titleTimer = null;
+  const baseTitle = document.title;
+
+  function load(k, def){ try{ return JSON.parse(localStorage.getItem(k)) ?? def; }catch(e){ return def; } }
+  function saveMon(){ try{ localStorage.setItem(LS_MON, JSON.stringify(monitors)); }catch(e){ log('저장 실패(용량 초과?): '+e.message,'err'); } }
+  function saveSet(){ localStorage.setItem(LS_SET, JSON.stringify(settings)); }
+
+  /* ----------------------- 유틸 ----------------------- */
+  const $ = s => document.querySelector(s);
+  const uid = () => 'm'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+  const now = () => Date.now();
+  const fmt = ts => ts ? new Date(ts).toLocaleString('ko-KR') : '—';
+  const escapeHtml = s => s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+  // 빠른 비교용 해시 (cyrb53)
+  function hash(str){
+    let h1=0xdeadbeef, h2=0x41c6ce57;
+    for(let i=0,ch;i<str.length;i++){ ch=str.charCodeAt(i);
+      h1=Math.imul(h1^ch,2654435761); h2=Math.imul(h2^ch,1597334677); }
+    h1=Math.imul(h1^(h1>>>16),2246822507)^Math.imul(h2^(h2>>>13),3266489909);
+    h2=Math.imul(h2^(h2>>>16),2246822507)^Math.imul(h1^(h1>>>13),3266489909);
+    return (4294967296*(2097151&h2)+(h1>>>0)).toString(16);
+  }
+
+  function decodeEntities(s){ const t=document.createElement('textarea'); t.innerHTML=s; return t.value; }
+
+  // HTML → 비교/diff에 쓸 정규화된 줄 단위 텍스트
+  function htmlToLines(html){
+    html = html
+      .replace(/<!--[\s\S]*?-->/g,'')
+      .replace(/<script[\s\S]*?<\/script>/gi,'')
+      .replace(/<style[\s\S]*?<\/style>/gi,'')
+      .replace(/<(br|\/p|\/div|\/li|\/h[1-6]|\/tr|\/section|\/article|\/header|\/footer|\/nav|\/td)[^>]*>/gi,'\n')
+      .replace(/<[^>]+>/g,'');
+    return decodeEntities(html)
+      .split('\n').map(l=>l.replace(/\s+/g,' ').trim()).filter(Boolean).join('\n');
+  }
+
+  function extractContent(rawHtml, selector, mode){
+    let html = rawHtml;
+    if(selector && selector.trim()){
+      const doc = new DOMParser().parseFromString(rawHtml,'text/html');
+      const el = doc.querySelector(selector.trim());
+      if(!el) throw new Error('선택자에 해당하는 요소 없음: '+selector);
+      html = (mode==='raw') ? el.outerHTML : el.innerHTML;
+    }
+    let content = (mode==='raw') ? html.replace(/\s+/g,' ').trim() : htmlToLines(html);
+    if(content.length > MAX_TEXT) content = content.slice(0, MAX_TEXT);
+    return content;
+  }
+
+  /* ----------------------- 네트워크 ----------------------- */
+  async function fetchText(url){
+    const r = await fetch(url, {cache:'no-store', redirect:'follow'});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    return r.text();
+  }
+
+  async function fetchRaw(m){
+    const u = m.url, cb = '_cb='+now();
+    switch(m.proxy){
+      case 'allorigins': {
+        const r = await fetch('https://api.allorigins.win/get?'+cb+'&url='+encodeURIComponent(u), {cache:'no-store'});
+        if(!r.ok) throw new Error('프록시 HTTP '+r.status);
+        const j = await r.json();
+        if(j && j.contents != null) return j.contents;
+        throw new Error('프록시 응답 비정상');
+      }
+      case 'corsproxy': return fetchText('https://corsproxy.io/?url='+encodeURIComponent(u));
+      case 'codetabs':  return fetchText('https://api.codetabs.com/v1/proxy/?quest='+encodeURIComponent(u));
+      case 'direct':    return fetchText(u);
+      case 'custom': {
+        const tpl = (m.customProxy||'').trim();
+        if(!tpl) throw new Error('사용자 프록시 URL이 비어 있습니다');
+        const target = tpl.includes('{url}') ? tpl.replace('{url}', encodeURIComponent(u)) : tpl + encodeURIComponent(u);
+        return fetchText(target);
+      }
+      default: return fetchText(u);
+    }
+  }
+
+  /* ----------------------- 검사 로직 ----------------------- */
+  async function check(id){
+    const m = monitors.find(x=>x.id===id);
+    if(!m) return;
+    setStatus(m, 'checking');
+    try{
+      const raw = await fetchRaw(m);
+      const content = extractContent(raw, m.selector, m.mode);
+      const h = hash(content);
+      m.lastCheck = now();
+      m.error = null;
+
+      if(m.lastHash == null){            // 최초 = 기준값 설정
+        m.lastHash = h; m.lastText = content;
+        setStatus(m, 'baseline');
+        log(`[${m.label||m.url}] 기준값 설정 완료`, 'info');
+      }else if(h !== m.lastHash){         // 변경!
+        const oldText = m.lastText || '';
+        m.lastHash = h; m.lastText = content;
+        m.lastChange = now(); m.changeCount = (m.changeCount||0)+1;
+        setStatus(m, 'changed');
+        log(`⚠ [${m.label||m.url}] 변경 감지!`, 'warn');
+        onChange(m, oldText, content);
+      }else{                              // 변경 없음
+        setStatus(m, 'unchanged');
+      }
+    }catch(err){
+      m.lastCheck = now(); m.error = err.message;
+      setStatus(m, 'error');
+      log(`✖ [${m.label||m.url}] 오류: ${err.message}`, 'err');
+    }
+    saveMon();
+  }
+
+  function setStatus(m, s){ m.status = s; render(); }
+
+  /* ----------------------- 알림 ----------------------- */
+  let modalUrl = null;
+  function onChange(m, oldText, newText){
+    if(settings.sound) beep();
+    if(settings.notify) notify(m);
+    if(settings.title)  flashTitle();
+    if(settings.popup)  showModal(m, oldText, newText);
+  }
+
+  function showModal(m, oldText, newText){
+    modalUrl = m.url;
+    const diff = renderDiff(oldText, newText);
+    $('#modalBody').innerHTML =
+      `<p style="margin:0 0 6px"><b>${escapeHtml(m.label||m.url)}</b> 페이지가 변경되었습니다.</p>`+
+      `<p class="url" style="margin:0 0 14px; color:var(--muted); font-size:12px; word-break:break-all">${escapeHtml(m.url)}</p>`+
+      `<p class="pill" style="margin:0 0 6px">변경 내용 (− 이전 / + 현재)</p>`+
+      `<div class="diff">${diff}</div>`;
+    $('#overlay').classList.add('show');
+  }
+
+  function closeModal(){ $('#overlay').classList.remove('show'); stopTitle(); }
+
+  // 줄 단위 LCS diff
+  function renderDiff(a, b){
+    const A=a.split('\n'), B=b.split('\n');
+    if(A.length>1500 || B.length>1500){       // 너무 크면 요약만
+      return `<div class="eq">(내용이 너무 커서 전체 비교를 생략합니다)</div>`+
+             `<div class="del">− ${escapeHtml(a.slice(0,500))}…</div>`+
+             `<div class="add">+ ${escapeHtml(b.slice(0,500))}…</div>`;
+    }
+    const n=A.length, mm=B.length;
+    const dp=Array.from({length:n+1},()=>new Uint16Array(mm+1));
+    for(let i=n-1;i>=0;i--) for(let j=mm-1;j>=0;j--)
+      dp[i][j]=A[i]===B[j]?dp[i+1][j+1]+1:Math.max(dp[i+1][j],dp[i][j+1]);
+    const out=[]; let i=0,j=0, shown=0, MAX=400;
+    const push=(cls,sign,v)=>{ if(shown++<MAX) out.push(`<div class="${cls}">${sign} ${escapeHtml(v)||'&nbsp;'}</div>`); };
+    while(i<n && j<mm){
+      if(A[i]===B[j]){ /* 동일 줄은 생략 */ i++; j++; }
+      else if(dp[i+1][j]>=dp[i][j+1]){ push('del','−',A[i]); i++; }
+      else { push('add','+',B[j]); j++; }
+    }
+    while(i<n) push('del','−',A[i++]);
+    while(j<mm) push('add','+',B[j++]);
+    if(!out.length) return `<div class="eq">(텍스트 차이를 특정할 수 없음 — 공백/태그 변경일 수 있음)</div>`;
+    if(shown>MAX) out.push(`<div class="eq">… 외 ${shown-MAX}줄 더 변경됨</div>`);
+    return out.join('');
+  }
+
+  function beep(){
+    try{
+      const ctx = new (window.AudioContext||window.webkitAudioContext)();
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.connect(g); g.connect(ctx.destination);
+      o.type='sine'; o.frequency.value=880;
+      g.gain.setValueAtTime(.001, ctx.currentTime);
+      g.gain.exponentialRampToValueAtTime(.25, ctx.currentTime+.02);
+      g.gain.exponentialRampToValueAtTime(.001, ctx.currentTime+.5);
+      o.start(); o.stop(ctx.currentTime+.5);
+    }catch(e){}
+  }
+
+  function notify(m){
+    if(!('Notification' in window) || Notification.permission!=='granted') return;
+    try{
+      const n = new Notification('🔔 변경 감지', {body:(m.label||m.url)+'\n'+m.url, tag:m.id});
+      n.onclick = ()=>{ window.focus(); n.close(); };
+    }catch(e){}
+  }
+
+  function flashTitle(){
+    if(titleTimer) return;
+    let on=false;
+    titleTimer = setInterval(()=>{ document.title = (on=!on) ? '🔔 변경 감지!' : baseTitle; }, 900);
+  }
+  function stopTitle(){ if(titleTimer){ clearInterval(titleTimer); titleTimer=null; document.title=baseTitle; } }
+  window.addEventListener('focus', stopTitle);
+
+  /* ----------------------- 타이머 ----------------------- */
+  function startTimer(m){
+    stopTimer(m.id);
+    if(!m.active) return;
+    check(m.id);                                   // 시작 즉시 1회
+    timers[m.id] = setInterval(()=>check(m.id), Math.max(5, m.interval)*1000);
+  }
+  function stopTimer(id){ if(timers[id]){ clearInterval(timers[id]); delete timers[id]; } }
+
+  /* ----------------------- 렌더링 ----------------------- */
+  function statusBadge(m){
+    if(!m.active) return '<span class="badge b-paused">일시정지</span>';
+    const map={baseline:['b-baseline','기준값 설정'],unchanged:['b-unchanged','변경 없음'],
+      changed:['b-changed','변경됨'],error:['b-error','오류'],checking:['b-checking','확인 중…']};
+    const [c,t]=map[m.status]||['b-baseline','대기'];
+    return `<span class="badge ${c}">${t}</span>`;
+  }
+
+  function render(){
+    const list = $('#list');
+    $('#count').textContent = monitors.length ? `(${monitors.length})` : '';
+    if(!monitors.length){ list.innerHTML='<div class="empty">아직 감시 중인 페이지가 없습니다. 위에서 URL을 추가하세요.</div>'; return; }
+    list.innerHTML='';
+    for(const m of monitors){
+      const el=document.createElement('div'); el.className='mon';
+      el.innerHTML =
+        `<div class="top">
+           <div style="min-width:0">
+             <div class="name">${escapeHtml(m.label||m.url)} ${statusBadge(m)}</div>
+             <div class="url"><a href="${escapeHtml(m.url)}" target="_blank" rel="noopener">${escapeHtml(m.url)}</a></div>
+           </div>
+         </div>
+         <div class="meta">
+           <span>주기 <b>${m.interval}s</b></span>
+           <span>방식 <b>${m.mode==='raw'?'원본 HTML':'텍스트'}</b></span>
+           ${m.selector?`<span>선택자 <b>${escapeHtml(m.selector)}</b></span>`:''}
+           <span>마지막 확인 <b>${fmt(m.lastCheck)}</b></span>
+           <span>마지막 변경 <b>${fmt(m.lastChange)}</b></span>
+           <span>변경 <b>${m.changeCount||0}</b>회</span>
+           ${m.error?`<span style="color:var(--err)">⚠ ${escapeHtml(m.error)}</span>`:''}
+         </div>
+         <div class="actions">
+           <button class="ghost sm" data-act="check" data-id="${m.id}">즉시 확인</button>
+           <button class="ghost sm" data-act="toggle" data-id="${m.id}">${m.active?'일시정지':'재개'}</button>
+           ${m.lastText?`<button class="ghost sm" data-act="view" data-id="${m.id}">현재 내용 보기</button>`:''}
+           <button class="danger sm" data-act="del" data-id="${m.id}">삭제</button>
+         </div>`;
+      list.appendChild(el);
+    }
+  }
+
+  /* ----------------------- 로그 ----------------------- */
+  function log(msg, cls){
+    const d=document.createElement('div');
+    d.innerHTML=`<span class="t">${new Date().toLocaleTimeString('ko-KR')}</span> <span class="c-${cls||'info'}">${escapeHtml(msg)}</span>`;
+    const box=$('#log'); box.prepend(d);
+    while(box.children.length>200) box.removeChild(box.lastChild);
+  }
+
+  /* ----------------------- 이벤트 ----------------------- */
+  $('#proxy').addEventListener('change', e=>{ $('#customProxy').disabled = e.target.value!=='custom'; });
+
+  $('#addBtn').addEventListener('click', ()=>{
+    let url = $('#url').value.trim();
+    if(!url){ alert('URL을 입력하세요.'); return; }
+    if(!/^https?:\/\//i.test(url)) url='https://'+url;
+    const m = {
+      id: uid(), url,
+      label: $('#label').value.trim(),
+      selector: $('#selector').value.trim(),
+      mode: $('#mode').value,
+      interval: Math.max(5, parseInt($('#interval').value,10)||60),
+      proxy: $('#proxy').value,
+      customProxy: $('#customProxy').value.trim(),
+      active: true, status:'baseline',
+      lastHash:null, lastText:null, lastCheck:null, lastChange:null, changeCount:0, error:null
+    };
+    monitors.push(m); saveMon(); render(); startTimer(m);
+    log(`[${m.label||m.url}] 감시 시작 (주기 ${m.interval}s)`, 'ok');
+    $('#url').value=''; $('#label').value=''; $('#selector').value='';
+  });
+
+  $('#list').addEventListener('click', e=>{
+    const btn=e.target.closest('button[data-act]'); if(!btn) return;
+    const id=btn.dataset.id, m=monitors.find(x=>x.id===id); if(!m) return;
+    switch(btn.dataset.act){
+      case 'check': check(id); break;
+      case 'toggle':
+        m.active=!m.active; saveMon();
+        if(m.active){ startTimer(m); log(`[${m.label||m.url}] 재개`,'ok'); }
+        else{ stopTimer(id); m.status='paused'; log(`[${m.label||m.url}] 일시정지`,'info'); }
+        render(); break;
+      case 'view': {
+        modalUrl=m.url;
+        const safe = escapeHtml(m.lastText||'').replace(/\n/g,'<br>') || '(없음)';
+        $('#modalBody').innerHTML =
+          `<p style="margin:0 0 6px"><b>${escapeHtml(m.label||m.url)}</b> — 현재 저장된 내용</p>`+
+          `<p class="url" style="margin:0 0 14px; color:var(--muted); font-size:12px; word-break:break-all">${escapeHtml(m.url)}</p>`+
+          `<div class="diff"><div class="eq">${safe}</div></div>`;
+        $('#overlay').classList.add('show'); break;
+      }
+      case 'del':
+        if(confirm('이 감시를 삭제할까요?')){ stopTimer(id); monitors=monitors.filter(x=>x.id!==id); saveMon(); render(); }
+        break;
+    }
+  });
+
+  $('#checkAll').addEventListener('click', ()=>monitors.forEach(m=>m.active&&check(m.id)));
+  $('#pauseAll').addEventListener('click', ()=>{
+    monitors.forEach(m=>{ m.active=false; m.status='paused'; stopTimer(m.id); });
+    saveMon(); render(); log('전체 일시정지','info');
+  });
+  $('#clearLog').addEventListener('click', ()=>$('#log').innerHTML='');
+
+  // 알림 토글
+  function bindToggle(id, key){
+    const el=$(id); el.checked=settings[key];
+    el.addEventListener('change', async ()=>{
+      if(key==='notify' && el.checked && 'Notification' in window && Notification.permission!=='granted'){
+        const p = await Notification.requestPermission();
+        if(p!=='granted'){ el.checked=false; }
+      }
+      settings[key]=el.checked; saveSet(); updateNotifyHint();
+    });
+  }
+  bindToggle('#optPopup','popup'); bindToggle('#optNotify','notify');
+  bindToggle('#optSound','sound'); bindToggle('#optTitle','title');
+
+  function updateNotifyHint(){
+    const h=$('#notifyHint');
+    if(!('Notification' in window)){ h.textContent='이 브라우저는 시스템 알림을 지원하지 않습니다.'; return; }
+    h.textContent = settings.notify
+      ? (Notification.permission==='granted' ? '시스템 알림이 켜져 있습니다(탭이 백그라운드여도 표시).'
+         : '브라우저 알림 권한이 필요합니다.')
+      : '화면 팝업 외에 OS 알림센터에도 띄우려면 “브라우저 알림”을 켜세요.';
+  }
+
+  // 모달 버튼
+  $('#modalClose').addEventListener('click', closeModal);
+  $('#modalOk').addEventListener('click', closeModal);
+  $('#openPage').addEventListener('click', ()=>{ if(modalUrl) window.open(modalUrl,'_blank','noopener'); });
+  $('#overlay').addEventListener('click', e=>{ if(e.target.id==='overlay') closeModal(); });
+  document.addEventListener('keydown', e=>{ if(e.key==='Escape') closeModal(); });
+
+  /* ----------------------- 시작 ----------------------- */
+  render();
+  updateNotifyHint();
+  monitors.forEach(m=>{ if(m.active) startTimer(m); else m.status='paused'; });
+  if(monitors.length) log(`저장된 감시 ${monitors.length}건을 불러왔습니다.`, 'info');
+})();
+</script>
+</body>
+</html>
