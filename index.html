@@ -141,9 +141,11 @@
       <div>
         <label for="proxy">CORS 프록시 (다른 사이트 접근용)</label>
         <select id="proxy">
-          <option value="allorigins">AllOrigins (기본)</option>
-          <option value="corsproxy">corsproxy.io</option>
+          <option value="auto">자동 — 여러 프록시 시도 (권장)</option>
+          <option value="allorigins">AllOrigins</option>
           <option value="codetabs">codetabs.com</option>
+          <option value="corsproxy">corsproxy.io</option>
+          <option value="jina">Jina Reader (텍스트 추출 · 선택자 무시)</option>
           <option value="direct">프록시 없음 (CORS 허용 사이트/동일 출처)</option>
           <option value="custom">직접 입력…</option>
         </select>
@@ -276,33 +278,61 @@
   }
 
   /* ----------------------- 네트워크 ----------------------- */
-  async function fetchText(url){
-    const r = await fetch(url, {cache:'no-store', redirect:'follow'});
+  // 타임아웃 포함 fetch (응답이 없으면 abort)
+  async function fetchTimeout(url, ms){
+    const ctrl = new AbortController();
+    const t = setTimeout(()=>ctrl.abort(), ms||15000);
+    try{ return await fetch(url, {cache:'no-store', redirect:'follow', signal:ctrl.signal}); }
+    finally{ clearTimeout(t); }
+  }
+
+  // 프록시 제공자 (build: 요청 URL 생성, parse: 응답에서 본문 추출)
+  const PROXIES = {
+    allorigins:    {label:'AllOrigins',     build:u=>'https://api.allorigins.win/get?url='+encodeURIComponent(u),
+                    parse:async r=>{const j=await r.json(); if(j&&j.contents!=null) return j.contents; throw new Error('빈 응답');}},
+    alloriginsRaw: {label:'AllOrigins(raw)', build:u=>'https://api.allorigins.win/raw?url='+encodeURIComponent(u), parse:r=>r.text()},
+    codetabs:      {label:'codetabs',        build:u=>'https://api.codetabs.com/v1/proxy/?quest='+encodeURIComponent(u), parse:r=>r.text()},
+    corsproxy:     {label:'corsproxy.io',    build:u=>'https://corsproxy.io/?url='+encodeURIComponent(u), parse:r=>r.text()},
+    jina:          {label:'Jina Reader',     build:u=>'https://r.jina.ai/'+u, parse:r=>r.text()},
+    direct:        {label:'직접 연결',        build:u=>u, parse:r=>r.text()}
+  };
+  // 자동 모드에서 순서대로 시도 (모두 대상의 원본 HTML을 반환하므로 결과 동일)
+  const AUTO_ORDER = ['allorigins','codetabs','alloriginsRaw','corsproxy'];
+
+  async function fetchVia(key, url){
+    const p = PROXIES[key]; if(!p) throw new Error('알 수 없는 프록시');
+    let r;
+    try{ r = await fetchTimeout(p.build(url), 15000); }
+    catch(e){ throw new Error(e.name==='AbortError' ? '시간 초과' : (e.message||'연결 실패')); }
     if(!r.ok) throw new Error('HTTP '+r.status);
-    return r.text();
+    const text = await p.parse(r);
+    if(!text) throw new Error('빈 응답');
+    return text;
   }
 
   async function fetchRaw(m){
-    const u = m.url, cb = '_cb='+now();
-    switch(m.proxy){
-      case 'allorigins': {
-        const r = await fetch('https://api.allorigins.win/get?'+cb+'&url='+encodeURIComponent(u), {cache:'no-store'});
-        if(!r.ok) throw new Error('프록시 HTTP '+r.status);
-        const j = await r.json();
-        if(j && j.contents != null) return j.contents;
-        throw new Error('프록시 응답 비정상');
-      }
-      case 'corsproxy': return fetchText('https://corsproxy.io/?url='+encodeURIComponent(u));
-      case 'codetabs':  return fetchText('https://api.codetabs.com/v1/proxy/?quest='+encodeURIComponent(u));
-      case 'direct':    return fetchText(u);
-      case 'custom': {
-        const tpl = (m.customProxy||'').trim();
-        if(!tpl) throw new Error('사용자 프록시 URL이 비어 있습니다');
-        const target = tpl.includes('{url}') ? tpl.replace('{url}', encodeURIComponent(u)) : tpl + encodeURIComponent(u);
-        return fetchText(target);
-      }
-      default: return fetchText(u);
+    // 사용자 지정 프록시
+    if(m.proxy==='custom'){
+      const tpl=(m.customProxy||'').trim();
+      if(!tpl) throw new Error('사용자 프록시 URL이 비어 있습니다');
+      const target = tpl.includes('{url}') ? tpl.replace('{url}',encodeURIComponent(m.url)) : tpl+encodeURIComponent(m.url);
+      const r = await fetchTimeout(target, 15000);
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      const t = await r.text(); m.usedProxy='사용자'; return t;
     }
+    // 단일 프록시 지정
+    if(m.proxy && m.proxy!=='auto'){
+      const t = await fetchVia(m.proxy, m.url);
+      m.usedProxy = (PROXIES[m.proxy]&&PROXIES[m.proxy].label) || m.proxy;
+      return t;
+    }
+    // 자동: 여러 프록시를 순차 시도하고, 하나라도 성공하면 사용
+    const errs=[];
+    for(const key of AUTO_ORDER){
+      try{ const t = await fetchVia(key, m.url); m.usedProxy = PROXIES[key].label; return t; }
+      catch(e){ errs.push(PROXIES[key].label+'('+e.message+')'); }
+    }
+    throw new Error('모든 프록시 실패 — '+errs.join(', '));
   }
 
   /* ----------------------- 검사 로직 ----------------------- */
@@ -453,6 +483,7 @@
          <div class="meta">
            <span>주기 <b>${m.interval}s</b></span>
            <span>방식 <b>${m.mode==='raw'?'원본 HTML':'텍스트'}</b></span>
+           <span>프록시 <b>${escapeHtml(m.proxy==='auto'?'자동':((PROXIES[m.proxy]&&PROXIES[m.proxy].label)||m.proxy))}</b>${m.usedProxy&&m.proxy==='auto'?` <span style="color:var(--muted)">(→${escapeHtml(m.usedProxy)})</span>`:''}</span>
            ${m.selector?`<span>선택자 <b>${escapeHtml(m.selector)}</b></span>`:''}
            <span>마지막 확인 <b>${fmt(m.lastCheck)}</b></span>
            <span>마지막 변경 <b>${fmt(m.lastChange)}</b></span>
@@ -563,10 +594,19 @@
   document.addEventListener('keydown', e=>{ if(e.key==='Escape') closeModal(); });
 
   /* ----------------------- 시작 ----------------------- */
+  // 1회 마이그레이션: 예전 기본값(allorigins)만 쓰던 감시를 자동(폴백)으로 업그레이드
+  let migrated = 0;
+  if(!settings.proxyMigrated){
+    monitors.forEach(m=>{ if(m.proxy==='allorigins'){ m.proxy='auto'; migrated++; } });
+    settings.proxyMigrated = true; saveSet();
+    if(migrated) saveMon();
+  }
+
   render();
   updateNotifyHint();
   monitors.forEach(m=>{ if(m.active) startTimer(m); else m.status='paused'; });
   if(monitors.length) log(`저장된 감시 ${monitors.length}건을 불러왔습니다.`, 'info');
+  if(migrated) log(`기존 감시 ${migrated}건의 프록시를 "자동(폴백)"으로 업그레이드했습니다.`, 'ok');
 })();
 </script>
 </body>
