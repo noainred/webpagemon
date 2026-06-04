@@ -147,6 +147,7 @@
           <option value="corsproxy">corsproxy.io</option>
           <option value="jina">Jina Reader (텍스트 추출 · 선택자 무시)</option>
           <option value="direct">프록시 없음 (CORS 허용 사이트/동일 출처)</option>
+          <option value="server">내부 프록시 서버 (/proxy · 폐쇄망/오프라인)</option>
           <option value="custom">직접 입력…</option>
         </select>
       </div>
@@ -311,6 +312,12 @@
   }
 
   async function fetchRaw(m){
+    // 내부 프록시 서버(/proxy) — 폐쇄망에서 server.py 와 함께 사용 (앱을 http로 서빙해야 함)
+    if(m.proxy==='server'){
+      const r = await fetchTimeout('/proxy?url='+encodeURIComponent(m.url), 20000);
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      m.usedProxy='내부 서버'; return await r.text();
+    }
     // 사용자 지정 프록시
     if(m.proxy==='custom'){
       const tpl=(m.customProxy||'').trim();
